@@ -1,0 +1,28 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form" xmlns:c="/lib/credentials">
+
+  <f:entry title="Klocwork Server Configuration">
+    <select name="serverConfig">
+      <j:forEach var="config" items="${descriptor.serverConfigs}">
+        <f:option selected="${config.name==instance.serverConfig}"
+                  value="${config.name}">${config.name}</f:option>
+      </j:forEach>
+    </select>
+  </f:entry>
+  <f:entry title="Klocwork Install Configuration">
+  <select name="installConfig">
+    <j:forEach var="config" items="${descriptor.installConfigs}">
+      <f:option selected="${config.name==instance.installConfig}"
+                value="${config.name}">${config.name}</f:option>
+    </j:forEach>
+  </select>
+  </f:entry>
+  <f:entry title="Klocwork Server Project">
+    <f:textbox field="serverProject"/>
+  </f:entry>
+  <f:entry title="Klocwork Build Specification">
+    <f:textbox field="buildSpec"/>
+  </f:entry>
+
+
+</j:jelly>

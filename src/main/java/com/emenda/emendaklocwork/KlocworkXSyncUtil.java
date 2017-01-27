@@ -1,0 +1,222 @@
+
+package com.emenda.emendaklocwork;
+
+import com.emenda.emendaklocwork.services.KlocworkApiService;
+import com.emenda.emendaklocwork.services.KlocworkApiConnection;
+import com.emenda.emendaklocwork.services.KlocworkResponse;
+import com.emenda.emendaklocwork.util.KlocworkUtil;
+
+
+import org.apache.commons.lang3.StringUtils;
+
+import org.joda.time.DateTime;
+import org.joda.time.format.DateTimeFormat;
+import org.joda.time.format.DateTimeFormatter;
+
+import org.kohsuke.stapler.DataBoundConstructor;
+
+import hudson.AbortException;
+import hudson.EnvVars;
+import hudson.Extension;
+import hudson.FilePath;
+
+import hudson.model.AbstractDescribableImpl;
+import hudson.model.Descriptor;
+import hudson.util.ArgumentListBuilder;
+
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
+
+import java.io.IOException;
+import java.io.Serializable;
+import java.lang.StringBuilder;
+import java.lang.InterruptedException;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class KlocworkXSyncUtil extends AbstractDescribableImpl<KlocworkXSyncUtil> {
+
+    private final boolean dryRun;
+    private final String lastSync;
+    private final String projectRegexp;
+    private final boolean statusAnalyze;
+    private final boolean statusIgnore;
+    private final boolean statusNotAProblem;
+    private final boolean statusFix;
+    private final boolean statusFixInNextRelease;
+    private final boolean statusFixInLaterRelease;
+    private final boolean statusDefer;
+    private final boolean statusFilter;
+
+    @DataBoundConstructor
+    public KlocworkXSyncUtil(boolean dryRun, String lastSync, String projectRegexp,
+                boolean statusAnalyze, boolean statusIgnore,
+                boolean statusNotAProblem, boolean statusFix,
+                boolean statusFixInNextRelease, boolean statusFixInLaterRelease,
+                boolean statusDefer, boolean statusFilter) {
+
+        this.dryRun = dryRun;
+        this.lastSync = lastSync;
+        this.projectRegexp = projectRegexp;
+        this.statusAnalyze = statusAnalyze;
+        this.statusIgnore = statusIgnore;
+        this.statusNotAProblem = statusNotAProblem;
+        this.statusFix = statusFix;
+        this.statusFixInNextRelease = statusFixInNextRelease;
+        this.statusFixInLaterRelease = statusFixInLaterRelease;
+        this.statusDefer = statusDefer;
+        this.statusFilter = statusFilter;
+    }
+
+    public ArgumentListBuilder getxsyncCmd(EnvVars envVars)
+                                            throws AbortException {
+        ArgumentListBuilder xsyncCmd = new ArgumentListBuilder("kwxsync");
+        String projectList = getProjectList(envVars);
+        String lastSyncArg = getLastSyncDateDiff();
+
+        xsyncCmd.add("--url", envVars.get(KlocworkConstants.KLOCWORK_URL));
+        xsyncCmd.add("--last-sync", lastSyncArg);
+
+        if (dryRun) {
+            xsyncCmd.add("--dry");
+        }
+
+        List<String> statuses = new ArrayList<String>();
+        if (statusAnalyze) {
+            statuses.add("Analyze");
+        }
+        if (statusIgnore) {
+            statuses.add("Ignore");
+        }
+        if (statusNotAProblem) {
+            statuses.add("Not a Problem");
+        }
+        if (statusFix) {
+            statuses.add("Fix");
+        }
+        if (statusFixInNextRelease) {
+            statuses.add("Fix in Next Release");
+        }
+        if (statusFixInLaterRelease) {
+            statuses.add("Fix in Later Release");
+        }
+        if (statusDefer) {
+            statuses.add("Defer");
+        }
+        if (statusFilter) {
+            statuses.add("Filter");
+        }
+
+        if (statuses.size() > 0) {
+            xsyncCmd.add("--statuses");
+            xsyncCmd.add(StringUtils.join(statuses,"\",\""));
+        }
+
+        xsyncCmd.addTokenized(projectList);
+        return xsyncCmd;
+    }
+
+    private String getProjectList(EnvVars envVars) throws AbortException {
+        StringBuilder projectList = new StringBuilder();
+        String request = "action=" + "projects";
+        KlocworkResponse response;
+
+        try {
+            KlocworkApiConnection kwService = new KlocworkApiConnection(
+                            envVars.get(KlocworkConstants.KLOCWORK_URL));
+            response = kwService.sendRequest(request);
+        } catch (IOException ex) {
+            throw new AbortException("Error: failed to connect to the Klocwork" +
+                " web API.\nCause: " + ex.getMessage() + "\nStacktrace:\n" +
+                KlocworkUtil.exceptionToString(ex));
+        }
+
+        if (!response.isSuccess()) {
+            throw new AbortException("API call failed with return: " +
+                response.getResponsesAsString());
+        }
+
+        JSONArray jsonResults = new JSONArray();
+        for (String s : response.getResponses()) {
+            jsonResults.add((JSONObject.fromObject(s)));
+        }
+
+        Pattern p = Pattern.compile(projectRegexp);
+        for (int i = 0; i < jsonResults.size(); i++) {
+              JSONObject jObj = jsonResults.getJSONObject(i);
+              Matcher m = p.matcher(jObj.getString("name"));
+              if (m.find()) {
+                  projectList.append("\"" + jObj.getString("name") + "\"");
+                  projectList.append(" ");
+              }
+        }
+
+        return projectList.toString();
+    }
+
+    private String getLastSyncDateDiff() throws NumberFormatException, AbortException {
+        Pattern p = Pattern.compile(KlocworkConstants.REGEXP_LASTSYNC);
+        Matcher m = p.matcher(lastSync);
+        if (!m.find()) {
+            throw new AbortException("Error: Could not match Last Sync value " +
+                lastSync + " using regular expression. " +
+                "Please check date/time format on job config.");
+        }
+
+        // get current date/time
+        DateTime date = new DateTime(new Date());
+        DateTimeFormatter dtf = DateTimeFormat.forPattern(KlocworkConstants.LASTSYNC_FORMAT);
+
+        if (!isStringNumZero(m.group(KlocworkConstants.REGEXP_GROUP_DAY))) {
+            date = date.minusDays(Integer.valueOf(m.group(KlocworkConstants.REGEXP_GROUP_DAY)));
+        }
+        if (!isStringNumZero(m.group(KlocworkConstants.REGEXP_GROUP_MONTH))) {
+            date = date.minusMonths(Integer.valueOf(m.group(KlocworkConstants.REGEXP_GROUP_MONTH)));
+        }
+        if (!isStringNumZero(m.group(KlocworkConstants.REGEXP_GROUP_YEAR))) {
+            date = date.minusYears(Integer.valueOf(m.group(KlocworkConstants.REGEXP_GROUP_YEAR)));
+        }
+        if (!isStringNumZero(m.group(KlocworkConstants.REGEXP_GROUP_HOUR))) {
+            date = date.minusHours(Integer.valueOf(m.group(KlocworkConstants.REGEXP_GROUP_HOUR)));
+        }
+        if (!isStringNumZero(m.group(KlocworkConstants.REGEXP_GROUP_MINUTE))) {
+            date = date.minusMinutes(Integer.valueOf(m.group(KlocworkConstants.REGEXP_GROUP_MINUTE)));
+        }
+        if (!isStringNumZero(m.group(KlocworkConstants.REGEXP_GROUP_SECOND))) {
+            date = date.minusSeconds(Integer.valueOf(m.group(KlocworkConstants.REGEXP_GROUP_SECOND)));
+        }
+
+        return dtf.print(date);
+    }
+
+    private boolean isStringNumZero(String num) {
+        if (num.trim().matches("0+")) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    public boolean getDryRun() { return dryRun; }
+    public String getLastSync() { return lastSync; }
+    public String getProjectRegexp() { return projectRegexp; }
+    public boolean isKlocworkStatusAnalyze() { return statusAnalyze; }
+    public boolean isKlocworkStatusIgnore() { return statusIgnore; }
+    public boolean isKlocworkStatusNotAProblem() { return statusNotAProblem; }
+    public boolean isKlocworkStatusFix() { return statusFix; }
+    public boolean isKlocworkStatusFixInNextRelease() { return statusFixInNextRelease; }
+    public boolean isKlocworkStatusFixInLaterRelease() { return statusFixInLaterRelease; }
+    public boolean isKlocworkStatusDefer() { return statusDefer; }
+    public boolean isKlocworkStatusFilter() { return statusFilter; }
+
+    @Extension
+    public static class DescriptorImpl extends Descriptor<KlocworkXSyncUtil> {
+        public String getDisplayName() { return null; }
+    }
+
+}

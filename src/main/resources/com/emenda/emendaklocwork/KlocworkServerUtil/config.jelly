@@ -1,0 +1,20 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form">
+
+  <f:entry title="Build Name">
+    <f:textbox field="buildName"/>
+  </f:entry>
+
+  <f:entry title="Tables Directory">
+    <f:textbox field="tablesDir" default="kwtables"/>
+  </f:entry>
+
+  <f:entry title="Incremental Analysis">
+    <f:checkbox field="incrementalAnalysis" default="true"/>
+  </f:entry>
+
+  <f:entry title="Additional Options">
+    <f:textbox field="additionalOpts"/>
+  </f:entry>
+
+</j:jelly>
