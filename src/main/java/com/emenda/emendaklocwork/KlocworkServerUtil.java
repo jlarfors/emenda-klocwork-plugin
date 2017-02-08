@@ -21,18 +21,19 @@ import java.lang.InterruptedException;
 
 public class KlocworkServerUtil extends AbstractDescribableImpl<KlocworkServerUtil> {
 
-    private final String buildName;
     private final String tablesDir;
     private final boolean incrementalAnalysis;
+    private final boolean ignoreReturnCodes;
     private final String additionalOpts;
 
     @DataBoundConstructor
     public KlocworkServerUtil(String buildName, String tablesDir,
-            boolean incrementalAnalysis,  String additionalOpts) {
+            boolean incrementalAnalysis, boolean ignoreReturnCodes,
+            String additionalOpts) {
 
-        this.buildName = buildName;
         this.tablesDir = tablesDir;
         this.incrementalAnalysis = incrementalAnalysis;
+        this.ignoreReturnCodes = ignoreReturnCodes;
         this.additionalOpts = additionalOpts;
     }
 
@@ -40,16 +41,24 @@ public class KlocworkServerUtil extends AbstractDescribableImpl<KlocworkServerUt
         ArgumentListBuilder kwdeployCmd =
             new ArgumentListBuilder("kwdeploy");
         kwdeployCmd.add("sync");
-        kwdeployCmd.add("--url", envVars.get(KlocworkConstants.KLOCWORK_URL));
+        kwdeployCmd.add("--url", KlocworkUtil.getAndExpandEnvVar(envVars,
+            KlocworkConstants.KLOCWORK_URL));
         return kwdeployCmd;
+    }
+
+    public ArgumentListBuilder getVersionCmd()
+                                        throws IOException, InterruptedException {
+        ArgumentListBuilder versionCmd = new ArgumentListBuilder("kwbuildproject");
+        versionCmd.add("--version");
+        return versionCmd;
     }
 
     public ArgumentListBuilder getKwbuildprojectCmd(EnvVars envVars,
         FilePath workspace) throws IOException, InterruptedException {
-        // FilePath kwTablesDir = new FilePath(workspace, tablesDir);
+
         ArgumentListBuilder kwbuildprojectCmd =
             new ArgumentListBuilder("kwbuildproject");
-        kwbuildprojectCmd.add("--tables-directory", getKwtablesDir(envVars, workspace));
+        kwbuildprojectCmd.add("--tables-directory", KlocworkUtil.getKwtablesDir(tablesDir));
         kwbuildprojectCmd.add("--license-host");
         kwbuildprojectCmd.add(KlocworkUtil.getAndExpandEnvVar(envVars,
             KlocworkConstants.KLOCWORK_LICENSE_HOST));
@@ -65,7 +74,7 @@ public class KlocworkServerUtil extends AbstractDescribableImpl<KlocworkServerUt
             kwbuildprojectCmd.add("--force");
         }
         if (!StringUtils.isEmpty(additionalOpts)) {
-            kwbuildproject.addTokenized(envVars.expand(additionalOpts));
+            kwbuildprojectCmd.addTokenized(envVars.expand(additionalOpts));
         }
         // Note: this has to be final step, because the build spec always comes
         // last!
@@ -73,32 +82,20 @@ public class KlocworkServerUtil extends AbstractDescribableImpl<KlocworkServerUt
         return kwbuildprojectCmd;
     }
 
-    public ArgumentListBuilder getKwadminCmd(EnvVars envVars, FilePath workspace) {
+    public ArgumentListBuilder getKwadminImportCmd(EnvVars envVars, FilePath workspace) {
         // FilePath kwTablesDir = new FilePath(workspace, envVars.expand(tablesDir));
         ArgumentListBuilder kwadminCmd =
             new ArgumentListBuilder("kwadmin");
         kwadminCmd.add("--url", KlocworkUtil.getAndExpandEnvVar(envVars,
             KlocworkConstants.KLOCWORK_URL));
-        kwadminCmd.add("load");
-
-        // add options such as --name of build
-        if (!StringUtils.isEmpty(buildName)) {
-            kwadminCmd.add("--name", envVars.expand(buildName));
-        }
-
-        kwadminCmd.add(KlocworkUtil.getAndExpandEnvVar(envVars,
-            KlocworkConstants.KLOCWORK_PROJECT));
-        kwadminCmd.add(getKwtablesDir(envVars, workspace));
+        kwadminCmd.add("import-config");
+        // TODO: add more!
         return kwadminCmd;
     }
-
-    private String getKwtablesDir(EnvVars envVars, FilePath workspace) {
-        return (new FilePath(workspace, envVars.expand(tablesDir))).getRemote();
-    }
-
-    public String getBuildName() { return buildName; }
+    
     public String getTablesDir() { return tablesDir; }
     public boolean getIncrementalAnalysis() { return incrementalAnalysis; }
+    public boolean getIgnorereturnCodes() { return ignoreReturnCodes; }
     public String getAdditionalOpts() { return additionalOpts; }
 
     @Extension

@@ -19,6 +19,7 @@ import hudson.AbortException;
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
+import hudson.Launcher;
 
 import hudson.model.AbstractDescribableImpl;
 import hudson.model.Descriptor;
@@ -52,13 +53,15 @@ public class KlocworkXSyncUtil extends AbstractDescribableImpl<KlocworkXSyncUtil
     private final boolean statusFixInLaterRelease;
     private final boolean statusDefer;
     private final boolean statusFilter;
+    private final String additionalOpts;
 
     @DataBoundConstructor
     public KlocworkXSyncUtil(boolean dryRun, String lastSync, String projectRegexp,
                 boolean statusAnalyze, boolean statusIgnore,
                 boolean statusNotAProblem, boolean statusFix,
                 boolean statusFixInNextRelease, boolean statusFixInLaterRelease,
-                boolean statusDefer, boolean statusFilter) {
+                boolean statusDefer, boolean statusFilter,
+                String additionalOpts) {
 
         this.dryRun = dryRun;
         this.lastSync = lastSync;
@@ -71,15 +74,24 @@ public class KlocworkXSyncUtil extends AbstractDescribableImpl<KlocworkXSyncUtil
         this.statusFixInLaterRelease = statusFixInLaterRelease;
         this.statusDefer = statusDefer;
         this.statusFilter = statusFilter;
+        this.additionalOpts = additionalOpts;
     }
 
-    public ArgumentListBuilder getxsyncCmd(EnvVars envVars)
+    public ArgumentListBuilder getVersionCmd()
+                                        throws IOException, InterruptedException {
+        ArgumentListBuilder versionCmd = new ArgumentListBuilder("kwxsync");
+        versionCmd.add("--version");
+        return versionCmd;
+    }
+
+    public ArgumentListBuilder getxsyncCmd(EnvVars envVars, Launcher launcher)
                                             throws AbortException {
+
         ArgumentListBuilder xsyncCmd = new ArgumentListBuilder("kwxsync");
-        String projectList = getProjectList(envVars);
+        String projectList = getProjectList(envVars, launcher);
         String lastSyncArg = getLastSyncDateDiff();
 
-        xsyncCmd.add("--url", envVars.get(KlocworkConstants.KLOCWORK_URL));
+        xsyncCmd.add("--url", KlocworkUtil.getAndExpandEnvVar(envVars, KlocworkConstants.KLOCWORK_URL));
         xsyncCmd.add("--last-sync", lastSyncArg);
 
         if (dryRun) {
@@ -117,18 +129,26 @@ public class KlocworkXSyncUtil extends AbstractDescribableImpl<KlocworkXSyncUtil
             xsyncCmd.add(StringUtils.join(statuses,"\",\""));
         }
 
+        if (!StringUtils.isEmpty(additionalOpts)) {
+            xsyncCmd.addTokenized(envVars.expand(additionalOpts));
+        }
+
         xsyncCmd.addTokenized(projectList);
         return xsyncCmd;
     }
 
-    private String getProjectList(EnvVars envVars) throws AbortException {
+    private String getProjectList(EnvVars envVars, Launcher launcher)
+        throws AbortException {
         StringBuilder projectList = new StringBuilder();
         String request = "action=" + "projects";
-        KlocworkResponse response;
+        JSONArray response;
 
         try {
+            String[] ltokenLine = KlocworkUtil.getLtokenValues(envVars, launcher);
             KlocworkApiConnection kwService = new KlocworkApiConnection(
-                            envVars.get(KlocworkConstants.KLOCWORK_URL));
+                            KlocworkUtil.getAndExpandEnvVar(envVars, KlocworkConstants.KLOCWORK_URL),
+                            ltokenLine[KlocworkConstants.LTOKEN_USER_INDEX],
+                            ltokenLine[KlocworkConstants.LTOKEN_HASH_INDEX]);
             response = kwService.sendRequest(request);
         } catch (IOException ex) {
             throw new AbortException("Error: failed to connect to the Klocwork" +
@@ -136,24 +156,19 @@ public class KlocworkXSyncUtil extends AbstractDescribableImpl<KlocworkXSyncUtil
                 KlocworkUtil.exceptionToString(ex));
         }
 
-        if (!response.isSuccess()) {
-            throw new AbortException("API call failed with return: " +
-                response.getResponsesAsString());
-        }
-
-        JSONArray jsonResults = new JSONArray();
-        for (String s : response.getResponses()) {
-            jsonResults.add((JSONObject.fromObject(s)));
-        }
-
         Pattern p = Pattern.compile(projectRegexp);
-        for (int i = 0; i < jsonResults.size(); i++) {
-              JSONObject jObj = jsonResults.getJSONObject(i);
+        for (int i = 0; i < response.size(); i++) {
+              JSONObject jObj = response.getJSONObject(i);
               Matcher m = p.matcher(jObj.getString("name"));
               if (m.find()) {
                   projectList.append("\"" + jObj.getString("name") + "\"");
                   projectList.append(" ");
               }
+        }
+        if (StringUtils.isEmpty(projectList)) {
+            throw new AbortException("Could not match any projects on server " +
+                KlocworkUtil.getAndExpandEnvVar(envVars, KlocworkConstants.KLOCWORK_URL) +
+                " with regular expression \"" + projectRegexp + "\"");
         }
 
         return projectList.toString();
@@ -213,6 +228,7 @@ public class KlocworkXSyncUtil extends AbstractDescribableImpl<KlocworkXSyncUtil
     public boolean isKlocworkStatusFixInLaterRelease() { return statusFixInLaterRelease; }
     public boolean isKlocworkStatusDefer() { return statusDefer; }
     public boolean isKlocworkStatusFilter() { return statusFilter; }
+    public String getAdditionalOpts() { return additionalOpts; }
 
     @Extension
     public static class DescriptorImpl extends Descriptor<KlocworkXSyncUtil> {

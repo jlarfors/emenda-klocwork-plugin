@@ -26,13 +26,13 @@ public class KlocworkJobDslExtension extends ContextExtensionPoint {
     }
 
     @DslExtensionMethod(context = StepContext.class)
-    public Object klocworkDesktopBuilder(String projectDir, String diffFile) {
-        return new KlocworkDesktopBuilder(new KlocworkDesktopUtil(projectDir, diffFile));
+    public Object klocworkDesktopBuilder(String projectDir, String reportFile, String additionalOpts) {
+        return new KlocworkDesktopBuilder(new KlocworkDesktopUtil(projectDir,reportFile, additionalOpts));
     }
 
     @DslExtensionMethod(context = StepContext.class)
-    public Object klocworkServerBuilder(String buildName, String tablesDir, boolean incrementalAnalysis, String additionalOptions) {
-        return new KlocworkServerBuilder(new KlocworkServerUtil(buildName, tablesDir, incrementalAnalysis, additionalOptions));
+    public Object klocworkServerBuilder(String buildName, String tablesDir, boolean incrementalAnalysis, boolean ignoreReturnCodes, String additionalOptions) {
+        return new KlocworkServerBuilder(new KlocworkServerUtil(buildName, tablesDir, incrementalAnalysis, ignoreReturnCodes, additionalOptions));
     }
 
     @DslExtensionMethod(context = StepContext.class)
@@ -40,10 +40,12 @@ public class KlocworkJobDslExtension extends ContextExtensionPoint {
                                         boolean statusAnalyze, boolean statusIgnore,
                                         boolean statusNotAProblem, boolean statusFix,
                                         boolean statusFixInNextRelease, boolean statusFixInLaterRelease,
-                                        boolean statusDefer, boolean statusFilter) {
+                                        boolean statusDefer, boolean statusFilter,
+                                        String additionalOpts) {
         return new KlocworkXSyncBuilder(new KlocworkXSyncUtil(dryRun, lastSync, projectRegexp, statusAnalyze, statusIgnore,
                                                     statusNotAProblem, statusFix, statusFixInNextRelease,
-                                                    statusFixInLaterRelease, statusDefer, statusFilter));
+                                                    statusFixInLaterRelease, statusDefer, statusFilter,
+                                                    additionalOpts));
     }
 
     @DslExtensionMethod(context = PublisherContext.class)

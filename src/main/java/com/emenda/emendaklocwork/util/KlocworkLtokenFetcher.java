@@ -1,4 +1,4 @@
-package com.emenda.emendaklocwork.services;
+package com.emenda.emendaklocwork.util;
 
 import com.emenda.emendaklocwork.KlocworkConstants;
 
@@ -9,6 +9,7 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.net.URL;
 import java.util.Scanner;
 
 public class KlocworkLtokenFetcher extends MasterToSlaveCallable<String[],IOException>  {
@@ -20,9 +21,9 @@ public class KlocworkLtokenFetcher extends MasterToSlaveCallable<String[],IOExce
     }
 
     public String[] call() throws IOException {
-        URL url = new URL(url);
-        String host = url.getHost();
-        String port = Integer.toString(url.getPort());
+        URL urlObj = new URL(url);
+        String host = urlObj.getHost();
+        String port = Integer.toString(urlObj.getPort());
         File ltoken = new File(System.getProperty("user.home") + File.separator +
              ".klocwork" + File.separator + "ltoken");
 
@@ -46,27 +47,6 @@ public class KlocworkLtokenFetcher extends MasterToSlaveCallable<String[],IOExce
              "\"" + ltoken.getAbsolutePath() + "\" for host \"" + host +
              " and port \"" + port);
     }
-
-    // public static String[] getLtokenValues(VirtualChannel channel, String host, String port) throws IOException {
-    //
-    //
-    //
-    //     // Scanner scanner =  new Scanner(new File(ltoken.getRemote()));
-    //     // String[] splitLine;
-    //     // while (scanner.hasNextLine()){
-    //     //     splitLine = scanner.nextLine().split(KlocworkConstants.LTOKEN_SEPARATOR);
-    //     //     if (isCorrectLtokenLine(splitLine, host,
-    //     //         Integer.toString(port))) {
-    //     //         return splitLine;
-    //     //     }
-    //     // }
-    //     // if we reach this point, we could not find the correct ltoken entry...
-    //     // throw exception to indicate error
-    //     // throw new IOException("Error: could not find a matching ltoken entry in " +
-    //     //     "\"" + ltoken.getRemote() + "\" for host \"" + host +
-    //     //     " and port \"" + port);
-    //
-    // }
 
     private static boolean isCorrectLtokenLine(String[] splitLine, String host, String port) {
         if (splitLine.length == 4 &&

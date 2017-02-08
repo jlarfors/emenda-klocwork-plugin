@@ -2,11 +2,18 @@
 package com.emenda.emendaklocwork;
 
 import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.QueryParameter;
 
+import hudson.Extension;
+import hudson.model.AbstractDescribableImpl;
+import hudson.model.Descriptor;
+import hudson.util.FormValidation;
+
+import javax.servlet.ServletException;
 import java.io.File;
 
 
-public class KlocworkInstallConfig {
+public class KlocworkInstallConfig extends AbstractDescribableImpl<KlocworkInstallConfig> {
 
     private final String name;
     private final String paths;
@@ -20,4 +27,9 @@ public class KlocworkInstallConfig {
 
     public String getName() { return name; }
     public String getPaths() { return paths; }
+
+    @Extension
+    public static class DescriptorImpl extends Descriptor<KlocworkInstallConfig> {
+        public String getDisplayName() { return null; }
+    }
 }

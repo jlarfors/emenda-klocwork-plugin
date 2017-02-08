@@ -1,21 +1,31 @@
 package com.emenda.emendaklocwork;
 
-import hudson.Launcher;
+import org.apache.commons.lang3.StringUtils;
+
+import hudson.AbortException;
+import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
+import hudson.Launcher;
+import hudson.Launcher.DecoratedLauncher;
+import hudson.Proc;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
 import hudson.model.AbstractBuild;
 import hudson.model.AbstractProject;
 import hudson.model.BuildListener;
+import hudson.model.Computer;
 import hudson.model.Item;
+import hudson.model.Node;
 import hudson.model.Run;
+import hudson.model.Run.RunnerAbortedException;
 import hudson.model.TaskListener;
 import hudson.security.ACL;
 import hudson.tasks.Builder;
 import hudson.tasks.BuildWrapper;
 import hudson.tasks.BuildStepDescriptor;
 import hudson.tasks.BuildWrapperDescriptor;
+import hudson.util.CopyOnWriteList;
 
 import jenkins.model.Jenkins;
 import jenkins.tasks.SimpleBuildStep;
@@ -27,6 +37,7 @@ import org.kohsuke.stapler.QueryParameter;
 
 import javax.servlet.ServletException;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -67,54 +78,113 @@ public class KlocworkBuildWrapper extends BuildWrapper {
 
 
     @Override
-    public Environment setUp(AbstractBuild build, Launcher launcher,
-                             BuildListener listener) throws IOException, InterruptedException {
-
-        KlocworkLogger logger = new KlocworkLogger(listener.getLogger());
-        logger.logMessage("Setting up environment for Klocwork jobs...");
-
-        KlocworkServerConfig server = getDescriptor().getServerConfig(serverConfig);
+    public Launcher decorateLauncher(AbstractBuild build, Launcher launcher,
+                             BuildListener listener) throws IOException, InterruptedException,
+                             RunnerAbortedException {
+        KlocworkLogger logger = new KlocworkLogger("BuildWrapper", listener.getLogger());
+        logger.logMessage("Setting up PATH for Klocwork jobs...");
         KlocworkInstallConfig install = getDescriptor().getInstallConfig(installConfig);
 
-        return new Environment() {
-            @Override
-            public void buildEnvVars(Map<String, String> env) {
+        final Node node =  Computer.currentComputer().getNode();
+        if (node == null) {
+            throw new AbortException("Cannot add variables to deleted node");
+        }
 
-                if (server != null) {
-                    logger.logMessage("Adding the Klocwork Server URL");
-                    env.put(KlocworkConstants.KLOCWORK_URL, server.getUrl());
-                    // if specific license details, else use the global ones
-                    if (server.isSpecificLicense()) {
-                        logger.logMessage("Using specific License");
-                        env.put(KlocworkConstants.KLOCWORK_LICENSE_HOST,
-                                    server.getLicenseHost());
-                        env.put(KlocworkConstants.KLOCWORK_LICENSE_PORT,
-                                    server.getLicensePort());
+        return new DecoratedLauncher(launcher) {
+            @Override
+            public Proc launch(ProcStarter starter) throws IOException {
+                EnvVars vars;
+                // taken from CustomToolsPlugin
+                try { // Dirty hack, which allows to avoid NPEs in Launcher::envs()
+                    vars = toEnvVars(starter.envs());
+                } catch (NullPointerException npe) {
+                    vars = new EnvVars();
+                } catch (InterruptedException x) {
+                    throw new IOException(x);
+                }
+
+                if (install != null) {
+                    logger.logMessage("Adding Klocwork to PATH. Using install \""
+                    + install.getName() + "\"");
+                    String paths = vars.get("PATH");
+                    String separator = (launcher.isUnix()) ? ":" : ";";
+                    paths += separator + install.getPaths();
+                    vars.remove("PATH");
+                    vars.put("PATH+", paths);
+                }
+
+                return getInner().launch(starter.envs(vars));
+            }
+
+            private EnvVars toEnvVars(String[] envs) throws IOException, InterruptedException {
+                Computer computer = node.toComputer();
+                EnvVars vars = computer != null ? computer.getEnvironment() : new EnvVars();
+                for (String line : envs) {
+                    vars.addLine(line);
+                }
+                return vars;
+            }
+        };
+    }
+
+    @Override
+    public Environment setUp(AbstractBuild build, Launcher launcher,
+            BuildListener listener) throws IOException, InterruptedException {
+
+            KlocworkLogger logger = new KlocworkLogger("BuildWrapper", listener.getLogger());
+            logger.logMessage("Setting up environment variables for Klocwork jobs...");
+            KlocworkServerConfig server = getDescriptor().getServerConfig(serverConfig);
+            return new Environment() {
+                @Override
+                public void buildEnvVars(Map<String, String> env) {
+
+                    if (server != null) {
+                        logger.logMessage("Adding the Klocwork Server URL " + server.getUrl());
+                        env.put(KlocworkConstants.KLOCWORK_URL, server.getUrl());
+                        // if specific license details, else use the global ones
+                        if (server.isSpecificLicense()) {
+                            logger.logMessage("Using specific License for given server " +
+                                server.getLicensePort() + "@" + server.getLicenseHost());
+                            env.put(KlocworkConstants.KLOCWORK_LICENSE_HOST,
+                                        server.getLicenseHost());
+                            env.put(KlocworkConstants.KLOCWORK_LICENSE_PORT,
+                                        server.getLicensePort());
+                        } else {
+                            logger.logMessage("Using Global License Settings " +
+                                getDescriptor().getGlobalLicensePort() + "@" +
+                                getDescriptor().getGlobalLicenseHost());
+                            env.put(KlocworkConstants.KLOCWORK_LICENSE_HOST,
+                                            getDescriptor().getGlobalLicenseHost());
+                            env.put(KlocworkConstants.KLOCWORK_LICENSE_PORT,
+                                            getDescriptor().getGlobalLicensePort());
+                        }
                     } else {
-                        logger.logMessage("Using Global License Settings");
+                        logger.logMessage("Warning: No Klocwork server selected. " +
+                            "Klocwork cannot perform server builds or synchronisations " +
+                            "without a server.");
+                        logger.logMessage("Using Global License Settings " +
+                            getDescriptor().getGlobalLicensePort() + "@" +
+                            getDescriptor().getGlobalLicenseHost());
                         env.put(KlocworkConstants.KLOCWORK_LICENSE_HOST,
                                         getDescriptor().getGlobalLicenseHost());
                         env.put(KlocworkConstants.KLOCWORK_LICENSE_PORT,
                                         getDescriptor().getGlobalLicensePort());
                     }
+
+                    env.put(KlocworkConstants.KLOCWORK_PROJECT, serverProject);
+                    if (StringUtils.isEmpty(buildSpec)) {
+                        env.put(KlocworkConstants.KLOCWORK_BUILD_SPEC,
+                            KlocworkConstants.DEFAULT_BUILD_SPEC);
+                    } else {
+                        env.put(KlocworkConstants.KLOCWORK_BUILD_SPEC, buildSpec);
+                    }
+
+
                 }
-
-                if (install != null) {
-                    logger.logMessage("Adding Klocwork to the PATH");
-                    String paths = env.get("PATH");
-                    logger.logMessage("PATH = " + paths);
-                    String separator = ":"; // TODO: handle Windows
-                    paths += separator + install.getPaths();
-                    logger.logMessage("new PATH = " + paths);
-                    env.put("PATH", paths);
-                }
-
-                env.put(KlocworkConstants.KLOCWORK_PROJECT, serverProject);
-                env.put(KlocworkConstants.KLOCWORK_BUILD_SPEC, buildSpec);
-
-            }
-        };
+            };
     }
+
+
 
 
 
@@ -135,40 +205,22 @@ public class KlocworkBuildWrapper extends BuildWrapper {
         return (DescriptorImpl)super.getDescriptor();
     }
 
-    /**
-     * Descriptor for {@link HelloWorldBuilder}. Used as a singleton.
-     * The class is marked as public so that it can be accessed from views.
-     *
-     * <p>
-     * See {@code src/main/resources/hudson/plugins/hello_world/KlocworkBuildWrapper/*.jelly}
-     * for the actual HTML fragment for the configuration screen.
-     */
-    @Extension // This indicates to Jenkins that this is an implementation of an extension point.
+    @Extension
     public static final class DescriptorImpl extends BuildWrapperDescriptor {
-
-        /**
-         * To persist global configuration information,
-         * simply store it in a field and call save().
-         *
-         * <p>
-         * If you don't want fields to be persisted, use {@code transient}.
-         */
 
          private String globalLicenseHost;
          private String globalLicensePort;
-         private KlocworkServerConfig[] serverConfigs = new KlocworkServerConfig[0];
-         private KlocworkInstallConfig[] installConfigs = new KlocworkInstallConfig[0];
+        //  private KlocworkServerConfig[] serverConfigs = new KlocworkServerConfig[0];
 
-        /**
-         * In order to load the persisted global configuration, you have to
-         * call load() in the constructor.
-         */
+         private CopyOnWriteList<KlocworkServerConfig> serverConfigs = new CopyOnWriteList<KlocworkServerConfig>();
+         private CopyOnWriteList<KlocworkInstallConfig> installConfigs = new CopyOnWriteList<KlocworkInstallConfig>();
+        //  private KlocworkInstallConfig[] installConfigs = new KlocworkInstallConfig[0];
+
         public DescriptorImpl() {
             load();
         }
 
         public boolean isApplicable(AbstractProject<?, ?> item) {
-            // Indicates that this builder can be used with all kinds of project types
             return true;
         }
 
@@ -177,27 +229,38 @@ public class KlocworkBuildWrapper extends BuildWrapper {
          * This human readable name is used in the configuration screen.
          */
         public String getDisplayName() {
-            return "Emenda Klocwork Build Settings";
+            return "Klocwork Build Settings";
         }
 
         @Override
         public boolean configure(StaplerRequest req, JSONObject formData) throws FormException {
-            serverConfigs = req.bindParametersToList(KlocworkServerConfig.class,
-                    "klocworkServer.").toArray(new KlocworkServerConfig[0]);
-            installConfigs = req.bindParametersToList(KlocworkInstallConfig.class,
-                    "klocworkInstall.").toArray(new KlocworkInstallConfig[0]);
+            // serverConfigs = req.bindParametersToList(KlocworkServerConfig.class,
+            //         "klocworkServer.").toArray(new KlocworkServerConfig[0]);
+            // installConfigs = req.bindParametersToList(KlocworkInstallConfig.class,
+            //         "klocworkInstall.").toArray(new KlocworkInstallConfig[0]);
 
-            JSONObject json = formData.getJSONObject("klocworkConfig");
-            globalLicenseHost = json.getString("globalLicenseHost");
-            globalLicensePort = json.getString("globalLicensePort");
+            serverConfigs.replaceBy(req.bindJSONToList(KlocworkServerConfig.class, formData.get("serverConfigs")));
+            installConfigs.replaceBy(req.bindJSONToList(KlocworkInstallConfig.class, formData.get("installConfigs")));
+
+            // JSONObject json = formData.getJSONObject("klocworkConfig");
+            // globalLicenseHost = json.getString("globalLicenseHost");
+            // globalLicensePort = json.getString("globalLicensePort");
+            globalLicenseHost = formData.getString("globalLicenseHost");
+            globalLicensePort = formData.getString("globalLicensePort");
             save();
             return super.configure(req,formData);
         }
 
         public String getGlobalLicenseHost() { return globalLicenseHost; }
         public String getGlobalLicensePort() { return globalLicensePort; }
-        public KlocworkServerConfig[] getServerConfigs() { return serverConfigs; }
-        public KlocworkInstallConfig[] getInstallConfigs() { return installConfigs; }
+
+        public KlocworkServerConfig[] getServerConfigs() {
+            return serverConfigs.toArray(new KlocworkServerConfig[0]);
+        }
+
+        public KlocworkInstallConfig[] getInstallConfigs() {
+            return installConfigs.toArray(new KlocworkInstallConfig[0]);
+        }
 
         public KlocworkServerConfig getServerConfig(String name) {
             for (KlocworkServerConfig config : serverConfigs) {

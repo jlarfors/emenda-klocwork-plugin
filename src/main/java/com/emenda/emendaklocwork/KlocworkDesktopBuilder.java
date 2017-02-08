@@ -3,6 +3,7 @@ package com.emenda.emendaklocwork;
 import com.emenda.emendaklocwork.util.KlocworkCmdExecuter;
 import com.emenda.emendaklocwork.util.KlocworkUtil;
 
+import hudson.AbortException;
 import hudson.Launcher;
 import hudson.Launcher.ProcStarter;
 import hudson.EnvVars;
@@ -65,15 +66,25 @@ public class KlocworkDesktopBuilder extends Builder {
     public KlocworkDesktopUtil getDesktopUtil() { return desktopUtil; }
 
     @Override
-    public boolean perform(AbstractBuild<?,?> build, Launcher launcher, BuildListener listener) {
-        KlocworkLogger logger = new KlocworkLogger(listener.getLogger());
-        EnvVars envVars = null;
+    public boolean perform(AbstractBuild<?,?> build, Launcher launcher, BuildListener listener)
+        throws IOException {
+        KlocworkLogger logger = new KlocworkLogger("DesktopBuilder", listener.getLogger());
+        EnvVars envVars = new EnvVars();
         try {
-            envVars = build.getEnvironment(listener);
-            logger.logMessage("Building in " + build.getWorkspace().getRemote());
+            envVars = build.getEnvironment(launcher.getListener());
+            logger.logMessage(Arrays.toString(launcher.launch().envs()));
             KlocworkCmdExecuter cmdExec = new KlocworkCmdExecuter();
 
-            if (!desktopUtil.hasExistingProject(build.getWorkspace())) {
+            int rc_version = cmdExec.executeCommand(launcher, listener,
+                    build.getWorkspace(), envVars,
+                    desktopUtil.getVersionCmd());
+            if (rc_version != 0) {
+                throw new AbortException(desktopUtil.getVersionCmd().toString() +
+                    "command failed with return code " +
+                    Integer.toString(rc_version));
+            }
+
+            if (!desktopUtil.hasExistingProject(build.getWorkspace(), envVars)) {
                 int rc_kwcheckCreate = cmdExec.executeCommand(launcher, listener,
                         build.getWorkspace(), envVars,
                         desktopUtil.getKwcheckCreateCmd(envVars, build.getWorkspace()));
@@ -82,6 +93,8 @@ public class KlocworkDesktopBuilder extends Builder {
                     logger.logMessage("kwcheck create return code " + Integer.toString(rc_kwcheckCreate));
                     return false;
                 }
+            } else {
+                // TODO: should we update existing project with settings, e.g project
             }
 
             int rc_kwcheckRun = cmdExec.executeCommand(launcher, listener,
@@ -93,17 +106,12 @@ public class KlocworkDesktopBuilder extends Builder {
                 return false;
             }
 
-        } catch (IOException ioe) {
-            logger.logMessage(KlocworkUtil.exceptionToString(ioe));
-            return false;
-        } catch (InterruptedException ie) {
-            logger.logMessage(KlocworkUtil.exceptionToString(ie));
-            return false;
+        }  catch (IOException | InterruptedException ex) {
+            throw new AbortException(KlocworkUtil.exceptionToString(ex));
         }
 
 
         return true;
-
     }
 
     // private String getDiffFileList(ProcStarter ps) throws IOException, InterruptedException {

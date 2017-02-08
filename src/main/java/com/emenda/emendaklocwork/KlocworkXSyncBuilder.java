@@ -1,9 +1,10 @@
 package com.emenda.emendaklocwork;
 
-import com.emenda.emendaklocwork.services.KlocworkLtokenFetcher;
+import com.emenda.emendaklocwork.util.KlocworkLtokenFetcher;
 import com.emenda.emendaklocwork.util.KlocworkCmdExecuter;
 import com.emenda.emendaklocwork.util.KlocworkUtil;
 
+import hudson.AbortException;
 import hudson.Launcher;
 import hudson.Launcher.ProcStarter;
 import hudson.EnvVars;
@@ -58,37 +59,28 @@ public class KlocworkXSyncBuilder extends Builder implements Serializable {
     public KlocworkXSyncUtil getXsyncUtil() { return xsyncUtil; }
 
     @Override
-    public boolean perform(AbstractBuild<?,?> build, Launcher launcher, BuildListener listener) {
-        KlocworkLogger logger = new KlocworkLogger(listener.getLogger());
+    public boolean perform(AbstractBuild<?,?> build, Launcher launcher, BuildListener listener)
+        throws IOException {
+        KlocworkLogger logger = new KlocworkLogger("XSyncBuilder", listener.getLogger());
         EnvVars envVars = null;
 
-        logger.logMessage("HOME DIRECTORY = " + System.getProperty("user.home"));
-
         try {
-            // String systemProperties = launcher.getChannel().call(new MasterToSlaveCallable<String,RuntimeException>(){
-            //     public String call() {
-            //         return System.getProperty("user.home");
-            //     }
-            // });
-            // logger.logMessage("HOME DIRECTORY SLAVE = " + systemProperties);
-
             envVars = build.getEnvironment(listener);
 
-            String[] ltokenLine = launcher.getChannel().call(
-                new KlocworkLtokenFetcher(envVars.get(KlocworkConstants.KLOCWORK_URL)));
-
-            logger.logMessage(Arrays.toString(ltokenLine));
-
-            logger.logMessage(xsyncUtil.getxsyncCmd(envVars).toString());
-            // toStringWithQuote
-            logger.logMessage(xsyncUtil.getxsyncCmd(envVars).toStringWithQuote());
-
-            int rc = new KlocworkCmdExecuter().executeCommand(launcher, listener,
-                     build.getWorkspace(), envVars, xsyncUtil.getxsyncCmd(envVars));
+            KlocworkCmdExecuter cmdExec = new KlocworkCmdExecuter();
+            int rc_version = cmdExec.executeCommand(launcher, listener,
+                    build.getWorkspace(), envVars,
+                    xsyncUtil.getVersionCmd());
+            if (rc_version != 0) {
+                throw new AbortException(xsyncUtil.getVersionCmd().toString() +
+                    "command failed with return code " +
+                    Integer.toString(rc_version));
+            }
+            int rc = cmdExec.executeCommand(launcher, listener,
+                     build.getWorkspace(), envVars, xsyncUtil.getxsyncCmd(envVars, launcher));
 
         } catch (IOException | InterruptedException ex) {
-            logger.logMessage(KlocworkUtil.exceptionToString(ex));
-            return false;
+            throw new AbortException(KlocworkUtil.exceptionToString(ex));
         }
 
         return true;

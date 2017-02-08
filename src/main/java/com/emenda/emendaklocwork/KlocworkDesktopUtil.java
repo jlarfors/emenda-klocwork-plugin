@@ -21,24 +21,34 @@ import java.lang.InterruptedException;
 public class KlocworkDesktopUtil extends AbstractDescribableImpl<KlocworkDesktopUtil> {
 
     private final String projectDir;
-    private final String diffFile;
+    private final String reportFile;
+    private final String additionalOpts;
 
     @DataBoundConstructor
-    public KlocworkDesktopUtil(String projectDir, String diffFile) {
+    public KlocworkDesktopUtil(String projectDir, String reportFile, String additionalOpts) {
 
         this.projectDir = projectDir;
-        this.diffFile = diffFile;
+        this.reportFile = reportFile;
+        // this.reportFile = StringUtils.isEmpty(reportFile) ? "kwcheck_report.xml" : reportFile;
+        this.additionalOpts = additionalOpts;
+    }
+
+    public ArgumentListBuilder getVersionCmd()
+                                        throws IOException, InterruptedException {
+        ArgumentListBuilder versionCmd = new ArgumentListBuilder("kwcheck");
+        versionCmd.add("--version");
+        return versionCmd;
     }
 
     public ArgumentListBuilder getKwcheckCreateCmd(EnvVars envVars, FilePath workspace)
                                         throws IOException, InterruptedException {
 
-        validateParentProjectDir(getKwlpDir(workspace).getParent());
+        validateParentProjectDir(getKwlpDir(workspace, envVars).getParent());
 
         ArgumentListBuilder kwcheckCreateCmd = new ArgumentListBuilder("kwcheck", "create");
         kwcheckCreateCmd.add("--url", KlocworkUtil.getKlocworkProjectUrl(envVars));
-        kwcheckCreateCmd.add("--project-dir", getKwlpDir(workspace).getRemote());
-        kwcheckCreateCmd.add("--settings-dir", getKwpsDir(workspace).getRemote());
+        kwcheckCreateCmd.add("--project-dir", getKwlpDir(workspace, envVars).getRemote());
+        kwcheckCreateCmd.add("--settings-dir", getKwpsDir(workspace, envVars).getRemote());
         kwcheckCreateCmd.add("--build-spec", KlocworkUtil.getBuildSpecPath(envVars, workspace));
         return kwcheckCreateCmd;
     }
@@ -47,15 +57,18 @@ public class KlocworkDesktopUtil extends AbstractDescribableImpl<KlocworkDesktop
                                         throws IOException, InterruptedException {
         ArgumentListBuilder kwcheckRunCmd =
             new ArgumentListBuilder("kwcheck", "run");
-        kwcheckRunCmd.add("--project-dir", getKwlpDir(workspace).getRemote());
+        kwcheckRunCmd.add("--project-dir", getKwlpDir(workspace, envVars).getRemote());
         kwcheckRunCmd.add("--license-host", KlocworkUtil.getAndExpandEnvVar(
             envVars, KlocworkConstants.KLOCWORK_LICENSE_HOST));
         kwcheckRunCmd.add("--license-port", KlocworkUtil.getAndExpandEnvVar(
             envVars, KlocworkConstants.KLOCWORK_LICENSE_PORT));
-        kwcheckRunCmd.add("-F", "xml", "--report", "kwcheck_report.xml");
+        kwcheckRunCmd.add("-F", "xml", "--report", reportFile);
         kwcheckRunCmd.add("--build-spec", KlocworkUtil.getBuildSpecPath(envVars, workspace));
+        if (!StringUtils.isEmpty(additionalOpts)) {
+            kwcheckRunCmd.addTokenized(envVars.expand(additionalOpts));
+        }
 
-        // TODO: check if diffFile is used and parse if so
+        // TODO: check if reportFile is used and parse if so
         String diffFiles = ""; // get diff file list ()
         if (!StringUtils.isEmpty(diffFiles)) {
             // add contents of diffFiles
@@ -70,9 +83,10 @@ public class KlocworkDesktopUtil extends AbstractDescribableImpl<KlocworkDesktop
     so we need to make sure to clean these up.
     If both .kwlp and .kwps exist then we reuse them
      */
-    public boolean hasExistingProject(FilePath workspace) throws IOException, InterruptedException {
-        FilePath kwlp = getKwlpDir(workspace);
-        FilePath kwps = getKwpsDir(workspace);
+    public boolean hasExistingProject(FilePath workspace, EnvVars envVars)
+        throws IOException, InterruptedException {
+        FilePath kwlp = getKwlpDir(workspace, envVars);
+        FilePath kwps = getKwpsDir(workspace, envVars);
 
         if (kwlp.exists()) {
             if (kwps.exists()) {
@@ -121,7 +135,8 @@ public class KlocworkDesktopUtil extends AbstractDescribableImpl<KlocworkDesktop
 
 
     public String getProjectDir() { return projectDir; }
-    public String getDiffFile() { return diffFile; }
+    public String getReportFile() { return reportFile; }
+    public String getAdditionalOpts() { return additionalOpts; }
 
 
 

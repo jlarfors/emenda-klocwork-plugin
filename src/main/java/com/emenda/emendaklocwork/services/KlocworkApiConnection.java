@@ -18,6 +18,7 @@ import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.net.ConnectException;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -25,12 +26,10 @@ import javax.net.ssl.X509TrustManager;
 
 import java.util.Scanner;
 
-
-//
-// import net.sf.json.JSONArray;
-// import net.sf.json.JSONException;
-// import net.sf.json.JSONObject;
-// import net.sf.json.JSONSerializer;
+import net.sf.json.JSONArray;
+import net.sf.json.JSONException;
+import net.sf.json.JSONObject;
+import net.sf.json.JSONSerializer;
 
 public class KlocworkApiConnection {
 
@@ -41,14 +40,11 @@ public class KlocworkApiConnection {
     /*
 	 * Argument constructors
 	 */
-	public KlocworkApiConnection(String url) throws IOException {
+	public KlocworkApiConnection(String url, String user, String ltoken) throws IOException {
         this.url = new URL(url + "/review/api");
-        // String[] ltokenValues = getLtokenValues();
-        this.user = "emenda"; // ltokenValues[KlocworkConstants.LTOKEN_USER_INDEX];
-        this.ltoken = "WRONGKEYYYYY"; // ltokenValues[KlocworkConstants.LTOKEN_HASH_INDEX];
+        this.user = user;
+        this.ltoken = ltoken;
 	}
-
-
 
 	/*
 	 * Function to connect to server using member variables host and connection
@@ -80,19 +76,17 @@ public class KlocworkApiConnection {
         return httpUrlConnection;
 	}
 
-	public KlocworkResponse sendRequest(String request) throws IOException {
+	public JSONArray sendRequest(String request) throws IOException {
 
-        KlocworkResponse response = null;
+        JSONArray response = new JSONArray();
+        String errorMsg = "";
 
         request += "&user=" + user;
         request += "&ltoken=" + ltoken;
-
+        boolean success = false;
         try {
-            boolean success = false;
             HttpURLConnection httpUrlConnection = createConnection();
-
             httpUrlConnection.setRequestProperty("Content-Length", Integer.toString(request.length()));
-
 
     		// Write the request to the connection
     		try {
@@ -111,11 +105,12 @@ public class KlocworkApiConnection {
     			BufferedReader buf = new BufferedReader(new InputStreamReader(
                             httpUrlConnection.getInputStream()));
 
-                response = new KlocworkResponse(success);
-
                 while (buf.ready()) {
-                    String line = buf.readLine();
-                    response.addResponse(line);
+                    if (success) {
+                        response.add(JSONObject.fromObject(buf.readLine()));
+                    } else {
+                        errorMsg += buf.readLine() + "\n";
+                    }
     			}
     			// Close the streams
     			buf.close();
@@ -128,12 +123,20 @@ public class KlocworkApiConnection {
         		}
         		httpUrlConnection = null;
             }
-        } catch (KeyManagementException | NoSuchAlgorithmException exception) {
+        } catch (KeyManagementException | NoSuchAlgorithmException | ConnectException ex) {
             throw new IOException(
-                "Error: connection to Klocwork Server at \"" +
+                "Error: connection to Klocwork Server \"" +
                 url.toString() + "\" failed.\n" +
                 "Request: " + request + "\n" +
-                "Cause: " + exception.getMessage(), exception);
+                "Cause: " + ex.getMessage(), ex);
+        }
+        if (!success) {
+            throw new IOException(
+                "Error: request was not successfully handled by Klocwork server \"" +
+                url.toString() + "\".\n" +
+                "Request: " + request + "\n" +
+                "Return: " + errorMsg
+            );
         }
         return response;
 	}

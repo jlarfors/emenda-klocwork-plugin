@@ -43,7 +43,7 @@ import java.util.Map;
  * <p>
  * When the user configures the project and enables this builder,
  * {@link DescriptorImpl#newInstance(StaplerRequest)} is invoked
- * and a new {@link KlocworkServerBuilder} is created. The created
+ * and a new {@link KlocworkPublishBuilder} is created. The created
  * instance is persisted to the project configuration XML by using
  * XStream, so this allows you to use instance fields (like {@link #name})
  * to remember the configuration.
@@ -53,65 +53,41 @@ import java.util.Map;
  *
  * @author Kohsuke Kawaguchi
  */
-public class KlocworkServerBuilder extends Builder {
+public class KlocworkPublishBuilder extends Builder {
 
-    private final KlocworkServerUtil serverUtil;
+    private final KlocworkPublishUtil publishUtil;
 
     @DataBoundConstructor
-    public KlocworkServerBuilder(KlocworkServerUtil serverUtil) {
-        this.serverUtil = serverUtil;
+    public KlocworkPublishBuilder(KlocworkPublishUtil publishUtil) {
+        this.publishUtil = publishUtil;
 
     }
 
     /**
      * We'll use this from the {@code config.jelly}.
      */
-    public KlocworkServerUtil getServerUtil() {
-        return serverUtil;
+    public KlocworkPublishUtil getPublishUtil() {
+        return publishUtil;
     }
 
     @Override
     public boolean perform(AbstractBuild<?,?> build, Launcher launcher, BuildListener listener)
         throws IOException {
-        KlocworkLogger logger = new KlocworkLogger("ServerBuilder", listener.getLogger());
+        KlocworkLogger logger = new KlocworkLogger("PublishBuilder", listener.getLogger());
         EnvVars envVars = null;
         try {
             KlocworkCmdExecuter cmdExec = new KlocworkCmdExecuter();
             envVars = build.getEnvironment(listener);
 
-            int rc_version = cmdExec.executeCommand(launcher, listener,
+            cmdExec.executeCommand(launcher, listener,
                     build.getWorkspace(), envVars,
-                    serverUtil.getVersionCmd());
-            if (rc_version != 0) {
-                throw new AbortException(serverUtil.getVersionCmd().toString() +
-                    "command failed with return code " +
-                    Integer.toString(rc_version));
-            }
+                    publishUtil.getVersionCmd());
 
-
-            int rc_kwdeploy = cmdExec.executeCommand(launcher, listener,
+            int rc_kwadmin = cmdExec.executeCommand(launcher, listener,
                     build.getWorkspace(), envVars,
-                    serverUtil.getKwdeployCmd(envVars, build.getWorkspace()));
-
-            if (rc_kwdeploy != 0) {
-                logger.logMessage("kwdeploy return code " + Integer.toString(rc_kwdeploy));
-                return false;
-            }
-
-            // TODO
-            // int rc_kwadmin = cmdExec.executeCommand(launcher, listener,
-            //         build.getWorkspace(), envVars,
-            //         serverUtil.getKwadminImportCmd(envVars, build.getWorkspace()));
-            // if (rc_kwadmin != 0) {
-            //     logger.logMessage("kwadmin return code " + Integer.toString(rc_kwadmin));
-            //     return false;
-            // }
-
-            int rc_kwbuild = cmdExec.executeCommand(launcher, listener,
-                    build.getWorkspace(), envVars,
-                    serverUtil.getKwbuildprojectCmd(envVars, build.getWorkspace()));
-            if (!serverUtil.getIgnorereturnCodes() && rc_kwbuild != 0) {
-                logger.logMessage("kwbuildproject return code " + Integer.toString(rc_kwdeploy));
+                    publishUtil.getKwadminLoadCmd(envVars, build.getWorkspace()));
+            if (rc_kwadmin != 0) {
+                logger.logMessage("kwadmin return code " + Integer.toString(rc_kwadmin));
                 return false;
             }
 
@@ -131,11 +107,11 @@ public class KlocworkServerBuilder extends Builder {
     }
 
     /**
-     * Descriptor for {@link KlocworkServerBuilder}. Used as a singleton.
+     * Descriptor for {@link KlocworkPublishBuilder}. Used as a singleton.
      * The class is marked as public so that it can be accessed from views.
      *
      * <p>
-     * See {@code src/main/resources/hudson/plugins/hello_world/KlocworkServerBuilder/*.jelly}
+     * See {@code src/main/resources/hudson/plugins/hello_world/KlocworkPublishBuilder/*.jelly}
      * for the actual HTML fragment for the configuration screen.
      */
     @Extension // This indicates to Jenkins that this is an implementation of an extension point.
@@ -192,7 +168,7 @@ public class KlocworkServerBuilder extends Builder {
          * This human readable name is used in the configuration screen.
          */
         public String getDisplayName() {
-            return "Emenda Klocwork - Step 1 - Run Server Analysis";
+            return "Emenda Klocwork - Step 2 - Publish Build";
         }
 
 

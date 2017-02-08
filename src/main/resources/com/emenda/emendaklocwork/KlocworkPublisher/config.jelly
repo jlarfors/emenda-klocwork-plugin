@@ -11,9 +11,9 @@
     When submitted, it will be passed to the corresponding constructor parameter.
   -->
 
-  <f:entry title="Klocwork Publisher">
+  <f:entry title="${%Klocwork Publisher}">
   </f:entry>
-  <f:entry title="Incremental Analysis">
+  <f:entry title="${%Option}">
     <f:textbox field="diffCmd"/>
   </f:entry>
 

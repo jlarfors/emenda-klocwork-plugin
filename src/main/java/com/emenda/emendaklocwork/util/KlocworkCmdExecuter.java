@@ -29,8 +29,13 @@ public class KlocworkCmdExecuter {
     public int executeCommand(Launcher launcher, BuildListener listener,
                         FilePath buildDir, EnvVars envVars, ArgumentListBuilder cmds)
                         throws IOException, InterruptedException {
+        if (launcher.isUnix()) {
+            cmds = new ArgumentListBuilder("/bin/sh", "-c", cmds.toString());
+        } else {
+            cmds = cmds.toWindowsCommand();
+            // cmds = new ArgumentListBuilder("cmd", "/c", cmds.toString());
+        }
 
-        cmds = new ArgumentListBuilder("/bin/sh", "-c", cmds.toString());
         return launcher.launch().
             stdout(listener).stderr(listener.getLogger()).
             pwd(buildDir).envs(envVars).cmds(cmds)

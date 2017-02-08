@@ -2,7 +2,8 @@
 package com.emenda.emendaklocwork;
 
 public class KlocworkConstants {
-    public static final String KLOCWORK_DEFAULT_BUILD_SPEC = "kwinject.out";
+    public static final String DEFAULT_BUILD_SPEC = "kwinject.out";
+    public static final String DEFAULT_TABLES_DIR = "kwtables";
 
     public static final String KLOCWORK_URL = "KLOCWORK_URL";
     public static final String KLOCWORK_LICENSE_HOST = "KLOCWORK_LICENSE_HOST";

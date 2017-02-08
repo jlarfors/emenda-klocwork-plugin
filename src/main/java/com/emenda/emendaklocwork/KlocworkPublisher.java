@@ -64,7 +64,6 @@ public class KlocworkPublisher extends Publisher {
     @DataBoundConstructor
     public KlocworkPublisher(String diffCmd) {
         this.diffCmd = diffCmd;
-
     }
 
     /**
@@ -76,7 +75,7 @@ public class KlocworkPublisher extends Publisher {
 
     @Override
     public boolean perform(AbstractBuild<?,?> build, Launcher launcher, BuildListener listener) {
-        KlocworkLogger logger = new KlocworkLogger(listener.getLogger());
+        KlocworkLogger logger = new KlocworkLogger("Publisher", listener.getLogger());
         EnvVars envVars = null;
         try {
             envVars = build.getEnvironment(listener);
